@@ -1,0 +1,140 @@
+================================================================================
+                    📚 CODE REVIEW - READING ORDER
+================================================================================
+
+⭐ = Importance (1-5 stars)
+⏱️ = Time to review
+
+--------------------------------------------------------------------------------
+PHASE 1: PROJECT CONFIGURATION
+--------------------------------------------------------------------------------
+[1] .env.example                                    ⭐⭐⭐   ⏱️ 5 min
+    → Environment variables and configuration
+
+[2] config/settings.py                              ⭐⭐⭐⭐⭐ ⏱️ 15 min
+    → Main Django configuration - CRITICAL
+    → Focus on: INSTALLED_APPS, CORS, DATABASE
+
+[3] config/urls.py                                  ⭐⭐⭐   ⏱️ 5 min
+    → URL routing table
+
+--------------------------------------------------------------------------------
+PHASE 2: DATA MODELS (Database Structure)
+--------------------------------------------------------------------------------
+[4] chatbot/models.py                               ⭐⭐⭐⭐⭐ ⏱️ 15 min
+    → Conversation, Message, ConversationContext
+    → CRITICAL - Understand data structure
+
+[5] integrations/models.py                          ⭐⭐⭐⭐  ⏱️ 10 min
+    → ChangeRequest model
+
+--------------------------------------------------------------------------------
+PHASE 3: BUSINESS LOGIC (The Brain)
+--------------------------------------------------------------------------------
+[6] chatbot/intents.py                              ⭐⭐⭐⭐  ⏱️ 10 min
+    → detect_intent() - keyword matching
+    → How bot understands user input
+
+[7] chatbot/handlers.py                             ⭐⭐⭐⭐⭐ ⏱️ 30 min
+    → CreateChangeRequestHandler - MOST IMPORTANT!
+    → CheckStatusHandler
+    → HelpHandler
+    → ALL THE CHATBOT LOGIC IS HERE
+
+[8] chatbot/context_manager.py                      ⭐⭐⭐   ⏱️ 5 min
+    → Manages conversation state
+
+[9] integrations/services.py                        ⭐⭐⭐   ⏱️ 10 min
+    → ServiceNow/Jira/GitHub integration (placeholder)
+
+--------------------------------------------------------------------------------
+PHASE 4: API LAYER (HTTP Interface)
+--------------------------------------------------------------------------------
+[10] chatbot/serializers.py                         ⭐⭐⭐⭐  ⏱️ 15 min
+     → JSON ↔ Python conversion
+     → Request/Response formats
+
+[11] chatbot/views.py                               ⭐⭐⭐⭐⭐ ⏱️ 20 min
+     → ChatMessageView - Main API endpoint
+     → CRITICAL - Full request/response cycle
+
+[12] chatbot/urls.py                                ⭐⭐⭐   ⏱️ 5 min
+     → URL to view mapping
+
+[13] chatbot/admin.py                               ⭐⭐    ⏱️ 5 min
+     → Django admin configuration (optional)
+
+--------------------------------------------------------------------------------
+PHASE 5: TESTING & DOCUMENTATION
+--------------------------------------------------------------------------------
+[14] README.md                                      ⭐⭐⭐⭐  ⏱️ 10 min
+[15] QUICK_START.md                                 ⭐⭐⭐⭐  ⏱️ 10 min
+[16] API_TESTING_GUIDE.md                           ⭐⭐⭐⭐  ⏱️ 15 min
+[17] interactive_client.py                          ⭐⭐⭐   ⏱️ 10 min
+[18] test_api.sh                                    ⭐⭐    ⏱️ 5 min
+
+================================================================================
+                        🎯 RECOMMENDED PATHS
+================================================================================
+
+QUICK PATH (30 minutes):
+  1. README.md
+  2. chatbot/models.py
+  3. chatbot/intents.py
+  4. chatbot/handlers.py (just CreateChangeRequestHandler)
+  5. chatbot/views.py
+
+COMPLETE PATH (2 hours):
+  Follow all files in order [1] → [18]
+
+PRACTICAL PATH (BEST!):
+  1. Read QUICK_START.md
+  2. Run: python interactive_client.py
+  3. As you chat, read the corresponding code:
+     - Type "create change" → Read handlers.py (CreateChangeRequestHandler)
+     - Type "help" → Read handlers.py (HelpHandler)
+     - See response → Read serializers.py
+
+DEVELOPER PATH (Adding features):
+  1. chatbot/intents.py - Add new keywords
+  2. chatbot/handlers.py - Create new handler
+  3. Test with interactive_client.py
+
+================================================================================
+                        🔥 TOP 5 MOST IMPORTANT
+================================================================================
+
+1. chatbot/handlers.py         - ALL THE CHATBOT LOGIC
+2. chatbot/views.py             - API ENDPOINTS
+3. chatbot/models.py            - DATABASE STRUCTURE
+4. config/settings.py           - PROJECT CONFIGURATION
+5. chatbot/serializers.py       - API REQUEST/RESPONSE FORMAT
+
+Start with these 5 if you're short on time!
+
+================================================================================
+                        💡 KEY CONCEPTS TO UNDERSTAND
+================================================================================
+
+1. INTENT DETECTION (intents.py)
+   User message → Keyword matching → Intent name
+
+2. HANDLER PATTERN (handlers.py)
+   Intent → Handler → Process message → Update context → Return response
+
+3. CONTEXT MANAGEMENT (context_manager.py)
+   Multi-step conversations tracked with:
+   - required_fields (what's still needed)
+   - collected_data (what we have)
+   - next_field (what to ask next)
+
+4. REQUEST/RESPONSE CYCLE (views.py)
+   HTTP Request → Serializer → Intent → Handler → Response
+
+5. SERIALIZATION (serializers.py)
+   JSON ↔ Python objects (validation + conversion)
+
+================================================================================
+
+TIP: Use your IDE's "Go to Definition" feature to jump between files!
+

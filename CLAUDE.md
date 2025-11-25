@@ -246,169 +246,56 @@ chatbot-frontend/
 ### Chatbot App Models
 
 **Conversation** - Tracks chat sessions
-```python
-class Conversation(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
-    user = models.ForeignKey(User, on_delete=models.CASCADE)  # Future: for auth
-    status = models.CharField(max_length=20, choices=[
-        ('active', 'Active'),
-        ('completed', 'Completed'),
-        ('abandoned', 'Abandoned')
-    ])
-    started_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['-updated_at']
-```
+- Fields: id (UUID), user (FK), status, started_at, updated_at
+- Tracks active, completed, or abandoned conversations
+- Ordered by most recent first
 
 **Message** - Individual chat messages
-```python
-class Message(models.Model):
-    conversation = models.ForeignKey(Conversation, related_name='messages', on_delete=models.CASCADE)
-    sender = models.CharField(max_length=10, choices=[
-        ('user', 'User'),
-        ('bot', 'Bot')
-    ])
-    text = models.TextField()
-    timestamp = models.DateTimeField(auto_now_add=True)
-    metadata = models.JSONField(null=True, blank=True)  # For rich content
-
-    class Meta:
-        ordering = ['timestamp']
-```
+- Fields: conversation (FK), sender (user/bot), text, timestamp, metadata
+- Stores all messages in chronological order
+- Metadata field for rich content (forms, buttons, etc.)
 
 **ConversationContext** - Tracks conversation state
-```python
-class ConversationContext(models.Model):
-    conversation = models.OneToOneField(Conversation, on_delete=models.CASCADE, related_name='context')
-    intent = models.CharField(max_length=50, null=True, blank=True)
-    collected_data = models.JSONField(default=dict)  # Fields collected so far
-    required_fields = models.JSONField(default=list)  # Fields still needed
-    next_field = models.CharField(max_length=50, null=True, blank=True)
-    change_request = models.ForeignKey('integrations.ChangeRequest', null=True, blank=True, on_delete=models.SET_NULL)
-
-    def is_complete(self):
-        return len(self.required_fields) == 0
-```
+- Fields: conversation (OneToOne), intent, collected_data, required_fields, next_field, change_request (FK)
+- Manages the state machine for form filling
+- Tracks which fields have been collected and what's still needed
+- Has `is_complete()` method to check if all required fields are collected
 
 ### Integrations App Models
 
 **ChangeRequest** - Links to ServiceNow changes
-```python
-class ChangeRequest(models.Model):
-    # ServiceNow fields
-    servicenow_sys_id = models.CharField(max_length=32, unique=True)
-    number = models.CharField(max_length=40)  # CHG0030001
-    short_description = models.CharField(max_length=255)
-    description = models.TextField()
-    state = models.CharField(max_length=20)
-    priority = models.CharField(max_length=10)
-
-    # Integration links
-    jira_issue_key = models.CharField(max_length=50, null=True, blank=True)
-    github_repo = models.CharField(max_length=100, null=True, blank=True)
-    github_pr_number = models.IntegerField(null=True, blank=True)
-
-    # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        indexes = [
-            models.Index(fields=['servicenow_sys_id']),
-            models.Index(fields=['number']),
-            models.Index(fields=['jira_issue_key']),
-        ]
-```
+- ServiceNow fields: servicenow_sys_id, number, short_description, description, state, priority
+- Integration links: jira_issue_key, github_repo, github_pr_number
+- Timestamps: created_at, updated_at
+- Indexed on servicenow_sys_id, number, and jira_issue_key for fast lookups
 
 ## API Design
 
 ### Chat API Endpoints
 
 **POST /api/chat/message/**
-Send a message and get bot response
-
-Request:
-```json
-{
-  "conversation_id": "uuid-or-null",  // null for new conversation
-  "message": "I want to create a change request"
-}
-```
-
-Response:
-```json
-{
-  "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
-  "intent": "create_change_request",
-  "bot_message": "I'll help you create a change request. What's the short description?",
-  "required_fields": ["short_description", "description", "priority"],
-  "collected_data": {},
-  "next_field": "short_description",
-  "is_complete": false
-}
-```
+- Send a message and get bot response
+- Request: conversation_id (optional, null for new), message (string)
+- Response: conversation_id, intent, bot_message, required_fields, collected_data, next_field, is_complete, change_request (optional)
 
 **GET /api/chat/conversations/**
-List user's conversations
-
-Response:
-```json
-{
-  "results": [
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440000",
-      "status": "active",
-      "started_at": "2025-01-15T10:30:00Z",
-      "last_message": "I'll help you create a change request...",
-      "message_count": 5
-    }
-  ]
-}
-```
+- List user's conversations
+- Returns: array of conversations with id, status, started_at, last_message, message_count
 
 **GET /api/chat/conversations/{id}/**
-Get conversation with all messages
-
-Response:
-```json
-{
-  "id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "active",
-  "started_at": "2025-01-15T10:30:00Z",
-  "messages": [
-    {
-      "id": 1,
-      "sender": "user",
-      "text": "I want to create a change request",
-      "timestamp": "2025-01-15T10:30:00Z"
-    },
-    {
-      "id": 2,
-      "sender": "bot",
-      "text": "I'll help you create a change request...",
-      "timestamp": "2025-01-15T10:30:01Z"
-    }
-  ],
-  "context": {
-    "intent": "create_change_request",
-    "collected_data": {},
-    "next_field": "short_description"
-  }
-}
-```
+- Get conversation with all messages
+- Returns: conversation details, full message history, current context
 
 ### Integration API Endpoints
 
 **GET /api/change-requests/**
-List change requests
+- List change requests
 
 **GET /api/change-requests/{id}/**
-Get change request details
+- Get change request details
 
 **GET /api/change-requests/by_servicenow_number/?number=CHG0030001**
-Find by ServiceNow number
+- Find by ServiceNow number
 
 ## Implementation Phases
 
@@ -424,328 +311,35 @@ Find by ServiceNow number
 - Integration with ServiceNow to create change requests
 
 **Intent Detection (Rule-Based)**:
-```python
-# chatbot/intents.py
-def detect_intent(message: str) -> str:
-    """Simple keyword-based intent detection"""
-    message_lower = message.lower()
+- Implement in `chatbot/intents.py`
+- Use keyword matching to detect intents
+- Supported intents: create_change_request, check_status, update_change_request, help, unknown
+- Match keywords like "create", "new", "change", "status", "update", etc.
 
-    # Create change request
-    if any(word in message_lower for word in ['create', 'new', 'make', 'add']):
-        if any(word in message_lower for word in ['change', 'ticket', 'request']):
-            return 'create_change_request'
+**Intent Handler Pattern**:
+- Each intent has a handler class (e.g., `CreateChangeRequestHandler`)
+- Handler defines REQUIRED_FIELDS and FIELD_PROMPTS
+- `handle()` method manages the conversation state machine
+- Collects fields one by one, validates input, creates ServiceNow request when complete
+- Returns bot_message, is_complete flag, and optional change_request data
 
-    # Check status
-    if any(word in message_lower for word in ['status', 'check', 'show', 'find']):
-        return 'check_status'
-
-    # Update change
-    if any(word in message_lower for word in ['update', 'modify', 'edit', 'change']):
-        return 'update_change_request'
-
-    # Help
-    if any(word in message_lower for word in ['help', 'what can you do']):
-        return 'help'
-
-    return 'unknown'
-```
-
-**Intent Handler Example**:
-```python
-# chatbot/handlers.py
-class CreateChangeRequestHandler:
-    REQUIRED_FIELDS = [
-        'short_description',
-        'description',
-        'priority',
-        'planned_start_date',
-        'planned_end_date'
-    ]
-
-    FIELD_PROMPTS = {
-        'short_description': "What's a brief summary of the change?",
-        'description': "Please provide a detailed description of the change.",
-        'priority': "What's the priority? (1-Critical, 2-High, 3-Medium, 4-Low)",
-        'planned_start_date': "When do you plan to start? (YYYY-MM-DD)",
-        'planned_end_date': "When should this be completed? (YYYY-MM-DD)"
-    }
-
-    def handle(self, context: ConversationContext, message: str) -> dict:
-        """Handle create_change_request intent"""
-
-        # Initialize context if new intent
-        if not context.intent:
-            context.intent = 'create_change_request'
-            context.required_fields = self.REQUIRED_FIELDS.copy()
-            context.next_field = self.REQUIRED_FIELDS[0]
-            context.save()
-
-            return {
-                'bot_message': self.FIELD_PROMPTS[context.next_field],
-                'is_complete': False
-            }
-
-        # Collect current field value
-        current_field = context.next_field
-        context.collected_data[current_field] = message
-        context.required_fields.remove(current_field)
-
-        # Check if more fields needed
-        if context.required_fields:
-            context.next_field = context.required_fields[0]
-            context.save()
-
-            return {
-                'bot_message': self.FIELD_PROMPTS[context.next_field],
-                'is_complete': False
-            }
-
-        # All fields collected - create change request
-        change_request = self._create_change_request(context.collected_data)
-        context.change_request = change_request
-        context.save()
-
-        return {
-            'bot_message': f"Change request {change_request.number} created successfully!",
-            'is_complete': True,
-            'change_request': {
-                'number': change_request.number,
-                'sys_id': change_request.servicenow_sys_id,
-                'url': f"https://your-instance.service-now.com/nav_to.do?uri=change_request.do?sys_id={change_request.servicenow_sys_id}"
-            }
-        }
-
-    def _create_change_request(self, data: dict) -> ChangeRequest:
-        """Call ServiceNow API to create change request"""
-        from integrations.services import ServiceNowService
-
-        service = ServiceNowService()
-        snow_response = service.create_change_request(
-            short_description=data['short_description'],
-            description=data['description'],
-            priority=data['priority'],
-            planned_start_date=data['planned_start_date'],
-            planned_end_date=data['planned_end_date']
-        )
-
-        # Create local record
-        change_request = ChangeRequest.objects.create(
-            servicenow_sys_id=snow_response['sys_id'],
-            number=snow_response['number'],
-            short_description=data['short_description'],
-            description=data['description'],
-            priority=data['priority'],
-            state=snow_response['state']
-        )
-
-        return change_request
-```
-
-**API View**:
-```python
-# chatbot/views.py
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from .models import Conversation, Message, ConversationContext
-from .intents import detect_intent
-from .handlers import CreateChangeRequestHandler, CheckStatusHandler
-
-class ChatMessageView(APIView):
-    """Handle chat messages"""
-
-    def post(self, request):
-        conversation_id = request.data.get('conversation_id')
-        user_message = request.data.get('message')
-
-        if not user_message:
-            return Response(
-                {'error': 'Message is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Get or create conversation
-        if conversation_id:
-            conversation = Conversation.objects.get(id=conversation_id)
-        else:
-            conversation = Conversation.objects.create(status='active')
-            ConversationContext.objects.create(conversation=conversation)
-
-        # Save user message
-        Message.objects.create(
-            conversation=conversation,
-            sender='user',
-            text=user_message
-        )
-
-        # Get context
-        context = conversation.context
-
-        # Detect intent if not already set
-        if not context.intent:
-            intent = detect_intent(user_message)
-            context.intent = intent
-            context.save()
-
-        # Route to appropriate handler
-        handler = self._get_handler(context.intent)
-        result = handler.handle(context, user_message)
-
-        # Save bot response
-        Message.objects.create(
-            conversation=conversation,
-            sender='bot',
-            text=result['bot_message']
-        )
-
-        # Mark conversation as completed if done
-        if result.get('is_complete'):
-            conversation.status = 'completed'
-            conversation.save()
-
-        # Build response
-        response_data = {
-            'conversation_id': str(conversation.id),
-            'intent': context.intent,
-            'bot_message': result['bot_message'],
-            'required_fields': context.required_fields,
-            'collected_data': context.collected_data,
-            'next_field': context.next_field,
-            'is_complete': result.get('is_complete', False)
-        }
-
-        if 'change_request' in result:
-            response_data['change_request'] = result['change_request']
-
-        return Response(response_data)
-
-    def _get_handler(self, intent: str):
-        handlers = {
-            'create_change_request': CreateChangeRequestHandler(),
-            'check_status': CheckStatusHandler(),
-            # Add more handlers as needed
-        }
-        return handlers.get(intent, CreateChangeRequestHandler())
-```
+**API View Pattern**:
+- `ChatMessageView` handles POST requests to /api/chat/message/
+- Gets or creates conversation and context
+- Saves user message
+- Detects intent if not already set
+- Routes to appropriate handler
+- Saves bot response
+- Marks conversation as completed when done
+- Returns structured response with conversation state
 
 **Frontend Chat Component**:
-```typescript
-// src/components/chat/ChatWindow.tsx
-import React, { useState, useEffect, useRef } from 'react';
-import { MessageBubble } from './MessageBubble';
-import { InputBox } from './InputBox';
-import { chatApi } from '@/services/chatApi';
-import type { Message, Conversation } from '@/types/chat.types';
-
-export const ChatWindow: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const handleSendMessage = async (text: string) => {
-    // Add user message to UI immediately
-    const userMessage: Message = {
-      id: Date.now(),
-      sender: 'user',
-      text,
-      timestamp: new Date().toISOString()
-    };
-    setMessages(prev => [...prev, userMessage]);
-
-    setIsLoading(true);
-
-    try {
-      const response = await chatApi.sendMessage({
-        conversation_id: conversationId,
-        message: text
-      });
-
-      // Update conversation ID if new
-      if (!conversationId) {
-        setConversationId(response.conversation_id);
-      }
-
-      // Add bot response
-      const botMessage: Message = {
-        id: Date.now() + 1,
-        sender: 'bot',
-        text: response.bot_message,
-        timestamp: new Date().toISOString(),
-        metadata: {
-          intent: response.intent,
-          change_request: response.change_request
-        }
-      };
-      setMessages(prev => [...prev, botMessage]);
-
-    } catch (error) {
-      console.error('Error sending message:', error);
-      // Show error message
-      const errorMessage: Message = {
-        id: Date.now() + 1,
-        sender: 'bot',
-        text: 'Sorry, I encountered an error. Please try again.',
-        timestamp: new Date().toISOString()
-      };
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b px-6 py-4 shadow-sm">
-        <h1 className="text-xl font-semibold text-gray-800">
-          IT Change Management Assistant
-        </h1>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-        {messages.length === 0 && (
-          <div className="text-center text-gray-500 mt-8">
-            <p className="text-lg mb-2">Welcome! How can I help you today?</p>
-            <p className="text-sm">
-              Try saying: "I want to create a change request"
-            </p>
-          </div>
-        )}
-
-        {messages.map(message => (
-          <MessageBubble key={message.id} message={message} />
-        ))}
-
-        {isLoading && (
-          <div className="flex items-center gap-2 text-gray-500">
-            <div className="animate-pulse">●</div>
-            <div className="animate-pulse animation-delay-200">●</div>
-            <div className="animate-pulse animation-delay-400">●</div>
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input */}
-      <InputBox
-        onSend={handleSendMessage}
-        disabled={isLoading}
-      />
-    </div>
-  );
-};
-```
+- `ChatWindow` component manages message list and input
+- Maintains local state for messages and conversation ID
+- Handles message sending with loading state
+- Scrolls to bottom when new messages arrive
+- Shows typing indicator while waiting for response
+- Displays welcome message when empty
 
 **Phase 1 Deliverables**:
 - ✅ Working chat interface
@@ -769,117 +363,25 @@ export const ChatWindow: React.FC = () => {
 - Multi-turn dialogue support
 
 **AI Intent Detection**:
-```python
-# chatbot/intents.py
-from langchain.chat_models import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
-from langchain.output_parsers import PydanticOutputParser
-from pydantic import BaseModel, Field
-
-class IntentDetectionResult(BaseModel):
-    intent: str = Field(description="The detected intent")
-    confidence: float = Field(description="Confidence score 0-1")
-    entities: dict = Field(description="Extracted entities")
-
-class AIIntentDetector:
-    def __init__(self):
-        self.llm = ChatOpenAI(
-            model="gpt-4",
-            temperature=0,
-            openai_api_key=settings.OPENAI_API_KEY
-        )
-        self.parser = PydanticOutputParser(pydantic_object=IntentDetectionResult)
-
-    def detect_intent(self, message: str, conversation_history: list = None) -> IntentDetectionResult:
-        """Use LLM to detect intent and extract entities"""
-
-        system_prompt = """You are an intent classifier for an IT change management chatbot.
-
-Available intents:
-- create_change_request: User wants to create a new change request
-- check_status: User wants to check the status of an existing change
-- update_change_request: User wants to update an existing change
-- list_changes: User wants to see all changes
-- help: User needs help understanding what the bot can do
-- unknown: Cannot determine intent
-
-Extract any relevant entities like:
-- priority (1-4, critical, high, medium, low)
-- dates (start date, end date)
-- descriptions or titles
-- change request numbers (CHG followed by numbers)
-
-{format_instructions}
-"""
-
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            ("user", "{message}")
-        ])
-
-        chain = prompt | self.llm | self.parser
-
-        result = chain.invoke({
-            "message": message,
-            "format_instructions": self.parser.get_format_instructions()
-        })
-
-        return result
-```
+- Use LangChain with OpenAI GPT-4
+- Create `AIIntentDetector` class in `chatbot/intents.py`
+- Define system prompt with available intents and entity types
+- Use Pydantic output parser for structured results
+- Return intent, confidence score, and extracted entities
 
 **Smart Entity Extraction**:
-```python
-# chatbot/handlers.py
-class SmartCreateChangeRequestHandler:
-    """AI-enhanced handler that pre-fills data from initial message"""
-
-    def handle(self, context: ConversationContext, message: str) -> dict:
-        # Use AI to extract entities from message
-        detector = AIIntentDetector()
-        result = detector.detect_intent(message)
-
-        # Pre-fill any extracted entities
-        if result.entities:
-            for field, value in result.entities.items():
-                if field in self.REQUIRED_FIELDS:
-                    context.collected_data[field] = value
-                    if field in context.required_fields:
-                        context.required_fields.remove(field)
-
-        context.save()
-
-        # Continue with normal flow
-        # ...
-```
+- Create `SmartCreateChangeRequestHandler` class
+- Extract entities from initial message (priority, dates, descriptions)
+- Pre-fill collected_data with extracted entities
+- Remove pre-filled fields from required_fields
+- Continue with normal form-filling flow for missing fields
 
 **Conversational Memory**:
-```python
-# chatbot/context_manager.py
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationChain
-
-class ConversationManager:
-    """Manages conversation context with LLM memory"""
-
-    def __init__(self, conversation: Conversation):
-        self.conversation = conversation
-        self.memory = ConversationBufferMemory()
-
-        # Load previous messages into memory
-        for msg in conversation.messages.all():
-            if msg.sender == 'user':
-                self.memory.chat_memory.add_user_message(msg.text)
-            else:
-                self.memory.chat_memory.add_ai_message(msg.text)
-
-    def get_response(self, user_message: str) -> str:
-        """Get contextual response using conversation history"""
-        llm = ChatOpenAI(model="gpt-4")
-        chain = ConversationChain(llm=llm, memory=self.memory)
-
-        response = chain.predict(input=user_message)
-        return response
-```
+- Use LangChain's ConversationBufferMemory
+- Create `ConversationManager` class in `chatbot/context_manager.py`
+- Load previous messages into memory on initialization
+- Use ConversationChain for context-aware responses
+- Maintains conversation history across turns
 
 **Phase 2 Deliverables**:
 - ✅ OpenAI/LangChain integration
@@ -903,198 +405,31 @@ class ConversationManager:
 - Multiple concurrent conversations
 
 **Django Channels Setup**:
-```python
-# config/asgi.py
-import os
-from django.core.asgi import get_asgi_application
-from channels.routing import ProtocolTypeRouter, URLRouter
-from channels.auth import AuthMiddlewareStack
-from chatbot import routing
-
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
-
-application = ProtocolTypeRouter({
-    "http": get_asgi_application(),
-    "websocket": AuthMiddlewareStack(
-        URLRouter(
-            routing.websocket_urlpatterns
-        )
-    ),
-})
-```
+- Configure ASGI application in `config/asgi.py`
+- Use ProtocolTypeRouter to handle both HTTP and WebSocket
+- Add AuthMiddlewareStack for authentication
+- Route WebSocket connections to chat consumer
 
 **WebSocket Consumer**:
-```python
-# chatbot/consumers.py
-import json
-from channels.generic.websocket import AsyncJsonWebsocketConsumer
-from channels.db import database_sync_to_async
-from .models import Conversation, Message, ConversationContext
-from .intents import detect_intent
-from .handlers import CreateChangeRequestHandler
-
-class ChatConsumer(AsyncJsonWebsocketConsumer):
-    async def connect(self):
-        await self.accept()
-
-        # Send welcome message
-        await self.send_json({
-            'type': 'bot_message',
-            'message': 'Welcome! How can I help you today?'
-        })
-
-    async def disconnect(self, close_code):
-        pass
-
-    async def receive_json(self, content):
-        message_type = content.get('type')
-
-        if message_type == 'user_message':
-            await self.handle_user_message(content)
-        elif message_type == 'typing':
-            # Echo typing indicator back
-            await self.send_json({
-                'type': 'typing',
-                'is_typing': content.get('is_typing', False)
-            })
-
-    async def handle_user_message(self, content):
-        user_message = content.get('message')
-        conversation_id = content.get('conversation_id')
-
-        # Show typing indicator
-        await self.send_json({
-            'type': 'bot_typing',
-            'is_typing': True
-        })
-
-        # Process message (use database_sync_to_async for ORM calls)
-        response = await self.process_message(user_message, conversation_id)
-
-        # Hide typing indicator
-        await self.send_json({
-            'type': 'bot_typing',
-            'is_typing': False
-        })
-
-        # Send response
-        await self.send_json({
-            'type': 'bot_message',
-            **response
-        })
-
-    @database_sync_to_async
-    def process_message(self, user_message, conversation_id):
-        # Same logic as REST API view
-        # ...
-        return {
-            'message': bot_message,
-            'conversation_id': str(conversation_id),
-            # ...
-        }
-```
+- Create `ChatConsumer` in `chatbot/consumers.py`
+- Extend AsyncJsonWebsocketConsumer
+- Handle connect, disconnect, receive_json events
+- Send typing indicators (bot_typing)
+- Process messages asynchronously
+- Use database_sync_to_async for ORM calls
 
 **WebSocket Routing**:
-```python
-# chatbot/routing.py
-from django.urls import path
-from . import consumers
-
-websocket_urlpatterns = [
-    path('ws/chat/', consumers.ChatConsumer.as_asgi()),
-]
-```
+- Create `routing.py` in chatbot app
+- Define websocket_urlpatterns
+- Map `/ws/chat/` to ChatConsumer
 
 **Frontend WebSocket Hook**:
-```typescript
-// src/hooks/useWebSocket.ts
-import { useEffect, useState, useRef, useCallback } from 'react';
-import type { Message } from '@/types/chat.types';
-
-export const useWebSocket = (url: string) => {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const [isBotTyping, setIsBotTyping] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
-
-  useEffect(() => {
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log('WebSocket connected');
-      setIsConnected(true);
-    };
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      if (data.type === 'bot_message') {
-        const message: Message = {
-          id: Date.now(),
-          sender: 'bot',
-          text: data.message,
-          timestamp: new Date().toISOString(),
-          metadata: data
-        };
-        setMessages(prev => [...prev, message]);
-      } else if (data.type === 'bot_typing') {
-        setIsBotTyping(data.is_typing);
-      }
-    };
-
-    ws.onclose = () => {
-      console.log('WebSocket disconnected');
-      setIsConnected(false);
-    };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-
-    return () => {
-      ws.close();
-    };
-  }, [url]);
-
-  const sendMessage = useCallback((text: string, conversationId?: string) => {
-    if (wsRef.current && isConnected) {
-      // Add user message to UI
-      const userMessage: Message = {
-        id: Date.now(),
-        sender: 'user',
-        text,
-        timestamp: new Date().toISOString()
-      };
-      setMessages(prev => [...prev, userMessage]);
-
-      // Send to server
-      wsRef.current.send(JSON.stringify({
-        type: 'user_message',
-        message: text,
-        conversation_id: conversationId
-      }));
-    }
-  }, [isConnected]);
-
-  const sendTypingIndicator = useCallback((isTyping: boolean) => {
-    if (wsRef.current && isConnected) {
-      wsRef.current.send(JSON.stringify({
-        type: 'typing',
-        is_typing: isTyping
-      }));
-    }
-  }, [isConnected]);
-
-  return {
-    messages,
-    isConnected,
-    isBotTyping,
-    sendMessage,
-    sendTypingIndicator
-  };
-};
-```
+- Create `useWebSocket` custom hook in `src/hooks/useWebSocket.ts`
+- Manage WebSocket connection lifecycle
+- Handle message sending and receiving
+- Track connection status
+- Support typing indicators
+- Auto-reconnect on disconnect
 
 **Phase 3 Deliverables**:
 - ✅ Django Channels + Redis setup
@@ -1110,106 +445,40 @@ export const useWebSocket = (url: string) => {
 
 ### Initial Project Setup (Monorepo)
 
-```bash
-# Create project directory
-mkdir chatbot-app
-cd chatbot-app
-
-# Initialize git
-git init
-
-# Create directory structure
-mkdir backend frontend
-
-# Create .gitignore (see below for contents)
-touch .gitignore
-```
+1. Create project directory
+2. Initialize git
+3. Create backend/ and frontend/ directories
+4. Create .gitignore file
 
 ### Backend Setup
 
-```bash
-cd backend
-
-# Install uv if not already installed
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Initialize uv project
-uv init
-
-# Add Django dependencies
-uv add django djangorestframework django-cors-headers python-decouple psycopg2-binary
-
-# Create Django project
-uv run django-admin startproject config .
-
-# Create apps
-uv run python manage.py startapp chatbot
-uv run python manage.py startapp integrations
-
-# For Phase 2 (AI)
-# uv add langchain openai
-
-# For Phase 3 (WebSockets)
-# uv add channels channels-redis redis
-
-# Create environment file
-cp .env.example .env
-# Edit .env with your credentials
-
-# Run migrations
-uv run python manage.py migrate
-
-# Create superuser
-uv run python manage.py createsuperuser
-
-# Test server
-uv run python manage.py runserver
-```
+1. Install uv package manager
+2. Initialize uv project
+3. Add Django dependencies: django, djangorestframework, django-cors-headers, python-decouple, psycopg2-binary
+4. Create Django project with `django-admin startproject config .`
+5. Create apps: chatbot and integrations
+6. For Phase 2: Add langchain and openai
+7. For Phase 3: Add channels, channels-redis, and redis
+8. Create .env file from .env.example
+9. Run migrations
+10. Create superuser
+11. Test server on http://localhost:8000
 
 ### Frontend Setup
 
-```bash
-cd ../frontend
-
-# Create React app with Vite
-npm create vite@latest . -- --template react-ts
-
-# Install dependencies
-npm install
-
-# Install UI dependencies
-npm install -D tailwindcss postcss autoprefixer
-npx tailwindcss init -p
-
-# Install shadcn/ui
-npx shadcn-ui@latest init
-
-# Install additional packages
-npm install axios zustand
-
-# Create environment file
-cp .env.example .env.local
-# Edit if needed (default VITE_API_URL=http://localhost:8000)
-
-# Test dev server
-npm run dev
-```
+1. Create React app with Vite and TypeScript template
+2. Install dependencies
+3. Install Tailwind CSS and configure
+4. Install shadcn/ui
+5. Install additional packages: axios, zustand
+6. Create .env.local file
+7. Test dev server on http://localhost:5173
 
 ### Running Both in Development
 
-You'll need two terminal windows:
-
-```bash
-# Terminal 1 - Backend
-cd backend
-uv run python manage.py runserver
-# Runs on http://localhost:8000
-
-# Terminal 2 - Frontend
-cd frontend
-npm run dev
-# Runs on http://localhost:5173
-```
+Run two terminal windows:
+- Terminal 1 (Backend): `cd backend && uv run python manage.py runserver`
+- Terminal 2 (Frontend): `cd frontend && npm run dev`
 
 **Access:**
 - Frontend UI: http://localhost:5173
@@ -1218,224 +487,61 @@ npm run dev
 
 ### Environment Variables
 
-**Backend (.env)**:
-```env
-# Django
-SECRET_KEY=your-secret-key-here
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1
+**Backend (.env)**: Configure Django settings, database, CORS, ServiceNow, Jira, GitHub, OpenAI API, and Redis
 
-# Database (PostgreSQL)
-DB_ENGINE=postgresql
-DB_NAME=chatbot_db
-DB_USER=postgres
-DB_PASSWORD=your-password
-DB_HOST=localhost
-DB_PORT=5432
-
-# For development, use SQLite instead:
-# DB_ENGINE=sqlite3
-
-# CORS (for local development)
-CORS_ALLOWED_ORIGINS=http://localhost:5173
-
-# ServiceNow
-SERVICENOW_INSTANCE=your-instance
-SERVICENOW_USERNAME=your-username
-SERVICENOW_PASSWORD=your-password
-
-# Jira
-JIRA_URL=https://your-domain.atlassian.net
-JIRA_EMAIL=your-email@example.com
-JIRA_API_TOKEN=your-api-token
-
-# GitHub
-GITHUB_TOKEN=your-github-token
-
-# Phase 2: OpenAI (for AI features)
-OPENAI_API_KEY=sk-...
-
-# Phase 3: Redis (for Channels)
-REDIS_URL=redis://localhost:6379/0
-```
-
-**Frontend (.env.local)**:
-```env
-VITE_API_URL=http://localhost:8000
-VITE_WS_URL=ws://localhost:8000
-```
+**Frontend (.env.local)**: Configure API URL and WebSocket URL
 
 ## Testing Strategy
 
 ### Backend Tests
 
-```python
-# chatbot/tests/test_intents.py
-from django.test import TestCase
-from chatbot.intents import detect_intent
+**Intent Detection Tests** (`chatbot/tests/test_intents.py`):
+- Test create_change_request intent detection
+- Test check_status intent detection
+- Test update_change_request intent detection
+- Test help and unknown intents
 
-class IntentDetectionTestCase(TestCase):
-    def test_create_change_request_intent(self):
-        message = "I want to create a new change request"
-        intent = detect_intent(message)
-        self.assertEqual(intent, 'create_change_request')
-
-    def test_check_status_intent(self):
-        message = "What's the status of CHG0030001?"
-        intent = detect_intent(message)
-        self.assertEqual(intent, 'check_status')
-```
-
-```python
-# chatbot/tests/test_handlers.py
-from django.test import TestCase
-from chatbot.models import Conversation, ConversationContext
-from chatbot.handlers import CreateChangeRequestHandler
-
-class CreateChangeRequestHandlerTestCase(TestCase):
-    def setUp(self):
-        self.conversation = Conversation.objects.create(status='active')
-        self.context = ConversationContext.objects.create(conversation=self.conversation)
-        self.handler = CreateChangeRequestHandler()
-
-    def test_initial_prompt(self):
-        result = self.handler.handle(self.context, "I want to create a change")
-        self.assertIn("short description", result['bot_message'].lower())
-        self.assertFalse(result['is_complete'])
-
-    def test_field_collection(self):
-        # Simulate collecting all fields
-        # ...
-```
+**Handler Tests** (`chatbot/tests/test_handlers.py`):
+- Test initial prompt generation
+- Test field collection flow
+- Test field validation
+- Test change request creation
+- Test completion detection
 
 ### Frontend Tests
 
-```typescript
-// src/components/chat/__tests__/ChatWindow.test.tsx
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { ChatWindow } from '../ChatWindow';
-import { chatApi } from '@/services/chatApi';
-
-jest.mock('@/services/chatApi');
-
-describe('ChatWindow', () => {
-  it('renders welcome message', () => {
-    render(<ChatWindow />);
-    expect(screen.getByText(/welcome/i)).toBeInTheDocument();
-  });
-
-  it('sends message and displays response', async () => {
-    const mockResponse = {
-      conversation_id: '123',
-      bot_message: 'How can I help you?',
-      intent: 'unknown'
-    };
-
-    (chatApi.sendMessage as jest.Mock).mockResolvedValue(mockResponse);
-
-    render(<ChatWindow />);
-
-    const input = screen.getByPlaceholderText(/type a message/i);
-    const sendButton = screen.getByRole('button', { name: /send/i });
-
-    fireEvent.change(input, { target: { value: 'Hello' } });
-    fireEvent.click(sendButton);
-
-    await waitFor(() => {
-      expect(screen.getByText('How can I help you?')).toBeInTheDocument();
-    });
-  });
-});
-```
+**Chat Component Tests** (`src/components/chat/__tests__/ChatWindow.test.tsx`):
+- Test welcome message rendering
+- Test message sending
+- Test bot response display
+- Test loading states
+- Test error handling
 
 ## Deployment Considerations
 
 ### Backend Deployment
 
 **Production Settings**:
-```python
-# config/settings.py
-import os
-from decouple import config
-
-DEBUG = config('DEBUG', default=False, cast=bool)
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='').split(',')
-
-# Use PostgreSQL in production
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('DB_NAME'),
-        'USER': config('DB_USER'),
-        'PASSWORD': config('DB_PASSWORD'),
-        'HOST': config('DB_HOST'),
-        'PORT': config('DB_PORT', default='5432'),
-    }
-}
-
-# Security
-SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=True, cast=bool)
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
-```
+- Set DEBUG=False
+- Configure ALLOWED_HOSTS
+- Use PostgreSQL database
+- Enable security settings: SECURE_SSL_REDIRECT, SESSION_COOKIE_SECURE, CSRF_COOKIE_SECURE
 
 **Docker Setup**:
-```dockerfile
-# Dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install uv
-RUN pip install uv
-
-# Copy dependency files
-COPY pyproject.toml requirements.txt ./
-
-# Install dependencies
-RUN uv pip install --system -r requirements.txt
-
-# Copy application
-COPY . .
-
-# Run migrations and collect static files
-RUN python manage.py collectstatic --noinput
-
-# Start server
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
-```
+- Use Python 3.11-slim base image
+- Install uv for dependency management
+- Copy dependencies and install
+- Copy application code
+- Collect static files
+- Run with gunicorn
 
 ### Frontend Deployment
 
-**Build for Production**:
-```bash
-npm run build
-```
+**Build for Production**: Run `npm run build`
 
-**Vercel/Netlify** (easiest):
-- Connect GitHub repo
-- Auto-deploy on push
-
-**Nginx** (traditional):
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    root /var/www/chatbot-frontend/dist;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    location /api {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
+**Deployment Options**:
+- Vercel/Netlify: Connect GitHub repo for auto-deploy
+- Nginx: Serve static files and proxy API requests to backend
 
 ## Best Practices
 
@@ -1459,27 +565,10 @@ server {
 - Add CORS configuration for production
 
 ### Monitoring & Logging
-```python
-# config/settings.py
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': 'chatbot.log',
-        },
-    },
-    'loggers': {
-        'chatbot': {
-            'handlers': ['file'],
-            'level': 'INFO',
-            'propagate': True,
-        },
-    },
-}
-```
+- Configure Django LOGGING in settings.py
+- Log to file with appropriate levels (INFO, WARNING, ERROR)
+- Set up handlers for different log destinations
+- Use structured logging for easier parsing
 
 ## Resources
 
@@ -1503,36 +592,18 @@ LOGGING = {
 ### Common Issues
 
 **CORS errors in development**:
-```python
-# config/settings.py
-INSTALLED_APPS = [
-    ...
-    'corsheaders',
-]
-
-MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
-    ...
-]
-
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',
-]
-```
+- Add 'corsheaders' to INSTALLED_APPS
+- Add 'corsheaders.middleware.CorsMiddleware' to MIDDLEWARE
+- Configure CORS_ALLOWED_ORIGINS with frontend URL
 
 **WebSocket connection fails**:
-- Ensure Redis is running: `redis-server`
+- Ensure Redis is running with `redis-server`
 - Check ASGI server is running, not WSGI
 - Verify WebSocket URL uses `ws://` or `wss://`
 
 **Database migrations conflict**:
-```bash
-# Reset migrations (development only!)
-uv run python manage.py migrate chatbot zero
-rm -rf chatbot/migrations/
-uv run python manage.py makemigrations chatbot
-uv run python manage.py migrate
-```
+- Reset migrations in development only
+- Migrate to zero, remove migrations folder, recreate and apply
 
 ## Next Steps After Setup
 

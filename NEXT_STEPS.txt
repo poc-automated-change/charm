@@ -1,0 +1,112 @@
+
+● Based on your project documentation, here's what you need to know for Phase 2:
+
+  Prerequisites to Learn
+
+  1. LangChain Fundamentals (Most Important)
+
+  - Prompt Templates: How to structure prompts for LLMs
+  - Output Parsers: Especially PydanticOutputParser for structured responses
+  - Chains: Basic LLMChain and ConversationChain
+  - Memory: ConversationBufferMemory for maintaining chat context
+
+     Resources:
+  - LangChain docs: https://python.langchain.com/docs/get_started/introduction
+  - Focus on: Prompt templates, Output parsers, Memory modules
+
+  2. OpenAI API Basics
+
+  - How to use GPT-4 or GPT-3.5-turbo
+  - Understanding tokens and costs
+  - API key management
+
+     Resources:
+  - OpenAI docs: https://platform.openai.com/docs/introduction
+
+  3. Pydantic (for structured outputs)
+
+  - Defining models for intent detection responses
+  - Validation and type safety
+
+     Resources:
+  - Pydantic docs: https://docs.pydantic.dev/
+
+  4. Named Entity Recognition (NER) Concepts
+
+  - Understanding what entities are (dates, priorities, names, etc.)
+  - How LLMs can extract structured data from unstructured text
+
+  First Steps in Phase 2
+
+  Step 1: Set Up Dependencies
+
+  cd backend
+  uv add langchain openai pydantic
+
+  Step 2: Get OpenAI API Key
+
+  - Sign up at https://platform.openai.com/
+  - Create API key
+  - Add to backend/.env: OPENAI_API_KEY=your_key_here
+
+  Step 3: Create AI Intent Detector
+
+  Start with a simple AI intent detector in backend/chatbot/intents.py:
+
+  from langchain.chat_models import ChatOpenAI
+  from langchain.prompts import ChatPromptTemplate
+  from langchain.output_parsers import PydanticOutputParser
+  from pydantic import BaseModel, Field
+
+  class IntentResponse(BaseModel):
+      intent: str = Field(description="The detected intent")
+      confidence: float = Field(description="Confidence score 0-1")
+      entities: dict = Field(description="Extracted entities")
+
+  class AIIntentDetector:
+      def __init__(self):
+          self.llm = ChatOpenAI(model="gpt-4", temperature=0)
+          self.parser = PydanticOutputParser(pydantic_object=IntentResponse)
+
+      def detect_intent(self, message: str, conversation_history: list = None):
+          # Your implementation here
+          pass
+
+  Step 4: Test in Isolation
+
+  Create a simple test script to verify AI detection works before integrating:
+
+  # test_ai_intent.py
+  detector = AIIntentDetector()
+  result = detector.detect_intent("I need to create a change for deploying the new API")
+  print(result.intent, result.confidence, result.entities)
+
+  Step 5: Integrate with Existing Handler
+
+  Modify your existing ChatMessageView to use AI detection instead of rule-based when a feature flag is enabled
+
+  Recommended Learning Path
+
+  1. Week 1: LangChain basics + OpenAI API
+    - Complete LangChain quickstart tutorial
+    - Build a simple prompt → LLM → response flow
+  2. Week 2: Structured outputs with Pydantic
+    - Learn Pydantic models
+    - Practice with PydanticOutputParser
+    - Build intent detection prototype
+  3. Week 3: Entity extraction
+    - Learn about NER concepts
+    - Build entity extraction for your domain (priority, dates, descriptions)
+    - Test with various user inputs
+  4. Week 4: Conversation memory
+    - Implement ConversationBufferMemory
+    - Build context-aware responses
+    - Test multi-turn conversations
+
+  Quick Start Resources
+
+  - LangChain Introduction: https://python.langchain.com/docs/get_started/quickstart
+  - LangChain Output Parsers: https://python.langchain.com/docs/modules/model_io/output_parsers/
+  - OpenAI Cookbook: https://cookbook.openai.com/
+
+  Would you like me to help you implement any specific part of Phase 2, or would you like me to create a simple prototype to get you started?
